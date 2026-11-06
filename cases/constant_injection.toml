@@ -1,0 +1,27 @@
+# 有限井段注采。SI 单位，深度向下为正，两个接收轴作全部组合。
+schema_version = 2
+[source]
+kind = "injection_rate"
+top_m = 900.0
+bottom_m = 1100.0
+radius_m = 100.0
+times_s = [0.0, 0.0, 100000.0]
+values = [0.0, 0.01, 0.01]
+[receivers]
+radii_m = [300.0, 2000.0]
+depths_m = [500.0, 1000.0, 1500.0]
+[time]
+window_s = 100000.0
+samples = 65
+[medium]
+surface = "fullspace"
+[[medium.nodes]]
+depth_m = 0.0
+shear_modulus_pa = 10000000000.0
+poisson = 0.25
+undrained_poisson = 0.35
+skempton = 0.5
+diffusivity_m2_s = 1.0
+
+[numerics]
+accuracy = 0.025
