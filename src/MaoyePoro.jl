@@ -38,15 +38,17 @@ prescribed drained volume change; the original drained elastic field is not incl
 
 `parallel=true` evaluates independent frequencies on the available Julia threads.
 It defaults to true when Julia was started with multiple threads.
+Detailed diagnostics remain in memory; input.diagnostics controls the default
+progress display. Numerical warnings are always emitted.
 """
-function solve(input::PoroelasticInput; verbose::Bool=true, max_frequencies=nothing,
+function solve(input::PoroelasticInput; verbose::Bool=input.diagnostics, max_frequencies=nothing,
                image_factor=DEFAULT_IMAGE_FACTOR, parallel::Bool=Threads.nthreads()>1)
     model = build_model(input)
     grid = build_grid(input, model)
     data, diagnostics = solve_spectra(input, model, grid; verbose, max_frequencies, image_factor, parallel)
     for d in diagnostics
         if !(d.sampling_converged && d.wavenumber_converged && d.frequency_converged)
-            @warn "A numerical truncation criterion was not met; inspect result.diagnostics" profile=d.profile sampling=d.sampling_converged wavenumbers=d.wavenumber_converged frequencies=d.frequency_converged
+            @warn "A numerical truncation criterion was not met; enable --diagnostics for details" profile=d.profile sampling=d.sampling_converged wavenumbers=d.wavenumber_converged frequencies=d.frequency_converged
         end
         if d.singular_samples
             @warn "An ideal source-history jump gives a singular instantaneous field; signed Inf samples represent that physical limit" profile=d.profile
@@ -59,10 +61,10 @@ function solve(input::PoroelasticInput; verbose::Bool=true, max_frequencies=noth
         equivalent, equivalent_diagnostics = equivalent_source(input, model, grid; verbose, max_frequencies, image_factor, parallel)
         direct_ok = !hasproperty(equivalent_diagnostics, :direct_limit_converged) || equivalent_diagnostics.direct_limit_converged
         if !(equivalent_diagnostics.frequency_converged && equivalent_diagnostics.wavenumber_converged && direct_ok)
-            @warn "Equivalent-source truncation criterion was not met" equivalent_diagnostics
+            @warn "Equivalent-source truncation criterion was not met; enable --diagnostics for details" frequencies=equivalent_diagnostics.frequency_converged wavenumbers=equivalent_diagnostics.wavenumber_converged direct_limit=direct_ok
         end
         if hasproperty(equivalent_diagnostics, :impulsive_steps) && equivalent_diagnostics.impulsive_steps
-            @warn "A sudden source change requires an instantaneous fluid-volume pulse; finite rate samples exclude this pulse, and equivalent_diagnostics.impulses records its time and volume."
+            @warn "A sudden source change requires an instantaneous fluid-volume pulse; finite rate samples exclude this pulse, and result.equivalent_impulses records its time and volume."
         end
     end
     if input.istype == 1 && (input.sinj0[1] != 0 || any(input.ts0[i] == input.ts0[i-1] && input.sinj0[i] != input.sinj0[i-1] for i in 2:length(input.ts0)))
@@ -72,31 +74,39 @@ function solve(input::PoroelasticInput; verbose::Bool=true, max_frequencies=noth
         image_factor=Float64(image_factor), parallel=parallel && Threads.nthreads()>1 &&
             !(input.istype == 0 && all(iszero,model.alf)),
         julia_threads=Threads.nthreads())
+    status = (field_converged=all(d -> d.sampling_converged && d.wavenumber_converged && d.frequency_converged, diagnostics),
+        equivalent_converged=equivalent_diagnostics === nothing ? nothing :
+            equivalent_diagnostics.frequency_converged && equivalent_diagnostics.wavenumber_converged &&
+            get(equivalent_diagnostics, :direct_limit_converged, true),
+        singular_samples=any(d -> d.singular_samples, diagnostics) ||
+            (equivalent_diagnostics !== nothing && get(equivalent_diagnostics, :singular_samples, false)))
+    equivalent_impulses = equivalent_diagnostics === nothing ? NamedTuple[] : equivalent_diagnostics.impulses
     (;input, model, grid, time=collect(range(0.0, input.twindow; length=input.nt)),
-       data, diagnostics, equivalent, equivalent_diagnostics, settings)
+       data, status, diagnostics, equivalent, equivalent_impulses, equivalent_diagnostics, settings)
 end
 
 """Read a TOML input, solve it, and save a complete JLD2 archive by default.
 
 The default output folder is results/<case> beside the input. `output_dir`
 overrides it; `format=:text` or `:both` explicitly exports analysis tables.
+`diagnostics=true` adds a separate diagnostics.txt and enables detailed progress;
+`verbose=false` suppresses that progress without changing file output.
 """
-function run_simulation(path::AbstractString; output_dir=nothing, format=:jld2,
-                  verbose::Bool=true, max_frequencies=nothing,image_factor=DEFAULT_IMAGE_FACTOR,
-                  parallel::Bool=Threads.nthreads()>1)
+function run_simulation(path::AbstractString; output_dir=nothing, kwargs...)
     if output_dir === nothing
         output_dir = joinpath(dirname(abspath(path)), "results", splitext(basename(path))[1])
     end
-    run_simulation(read_input(path); output_dir, format, verbose, max_frequencies, image_factor, parallel)
+    run_simulation(read_input(path); output_dir, kwargs...)
 end
 
 """Solve an in-memory input and save one complete JLD2 result by default."""
 function run_simulation(input::PoroelasticInput; output_dir::AbstractString="results/simulation", format=:jld2,
-                  verbose::Bool=true, max_frequencies=nothing,image_factor=DEFAULT_IMAGE_FACTOR,
+                  diagnostics::Bool=input.diagnostics, verbose::Bool=diagnostics,
+                  max_frequencies=nothing,image_factor=DEFAULT_IMAGE_FACTOR,
                   parallel::Bool=Threads.nthreads()>1)
     Symbol(format) in (:text, :jld2, :both) || error("Output format must be jld2, text, or both.")
     result = solve(input; verbose, max_frequencies, image_factor, parallel)
-    paths = write_outputs(result; output_dir, format)
+    paths = write_outputs(result; output_dir, format, diagnostics)
     (;result..., paths)
 end
 

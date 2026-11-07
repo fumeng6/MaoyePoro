@@ -20,15 +20,39 @@ function enforce_surface!(data, input, model, grid; effective_radius=input.sradi
     data
 end
 
-"""Save a complete JLD2 archive by default; use :text or :both for analysis tables."""
-function write_outputs(result; output_dir::AbstractString="results/simulation", format=:jld2)
+"""Save physical results; diagnostics=true adds a separate diagnostics.txt report.
+
+JLD2 is the default; :text and :both export analysis tables with a brief
+simulation_info.txt describing coordinates, units and numerical status.
+"""
+function write_outputs(result; output_dir::AbstractString="results/simulation", format=:jld2,
+                       diagnostics::Bool=!isempty(result.diagnostics) && result.input.diagnostics)
     format = Symbol(format)
     format in (:text, :jld2, :both) || error("Output format must be jld2, text, or both.")
+    diagnostics && isempty(result.diagnostics) &&
+        error("Detailed diagnostics are unavailable in a loaded result archive; enable diagnostics when solving, or write the in-memory solve result.")
     input, data = result.input, result.data
+    diagnostics_path = abspath(joinpath(output_dir, "diagnostics.txt"))
+    if format != :jld2
+        text_files = [input.filenames[i] for i in 1:10 if input.selected[i]]
+        append!(text_files, input.filesn)
+        result.equivalent === nothing || push!(text_files, input.equivalent_filename)
+        for filename in text_files
+            target = abspath(joinpath(output_dir, filename))
+            collision = Sys.iswindows() ? lowercase(target) == lowercase(diagnostics_path) : target == diagnostics_path
+            collision && error("diagnostics.txt is reserved for numerical diagnostics; choose another physical-output filename.")
+        end
+    end
     mkpath(output_dir)
     nt, nr, nzr, _ = size(data)
     dt = input.twindow/(nt-1)
     paths = String[]
+    if diagnostics
+        push!(paths, write_diagnostics(diagnostics_path, result))
+    elseif isfile(diagnostics_path)
+        # A repeated run must not leave another run's diagnostics beside its results.
+        rm(diagnostics_path)
+    end
     if format != :text
         push!(paths, save_result(joinpath(output_dir, "result.jld2"), result))
         format == :jld2 && return paths
@@ -97,15 +121,42 @@ function write_outputs(result; output_dir::AbstractString="results/simulation", 
         println(io, "time samples: ", nt, "; dt [s]: ", dt, "; window [s]: ", input.twindow)
         println(io, "homogeneous layers: ", length(result.model.h),
             "; depth levels: ", length(result.grid.z), "; requested integration accuracy: ", input.accuracy)
-        for d in result.diagnostics
-            println(io, d)
+        println(io, "field order: time, then depth-major/radius-minor receiver columns")
+        for (name, unit) in zip(COMPONENTS, RESULT_UNITS)
+            println(io, name, " [", unit, "]")
         end
-        result.equivalent_diagnostics === nothing || println(io, "equivalent source: ", result.equivalent_diagnostics)
-        hasproperty(result, :settings) && println(io, "solver settings: ", result.settings)
+        println(io, "numerical status: ", result.status)
+        for impulse in result.equivalent_impulses
+            println(io, "instantaneous fluid-volume pulse: time [s]=", impulse.time, "; volume [m^3]=", impulse.volume)
+        end
+        println(io, "detailed diagnostics: ", diagnostics ? "diagnostics.txt" : "not requested (enable --diagnostics)")
         println(io, "Convergence flags concern numerical truncation criteria; they are not an error bound for the physical model.")
     end
     push!(paths, abspath(path))
     paths
+end
+
+function write_diagnostics(path, result)
+    open(path, "w") do io
+        println(io, "MaoyePoro ", pkgversion(@__MODULE__), " numerical diagnostics")
+        println(io, "numerical status: ", result.status)
+        println(io, "requested integration accuracy: ", result.input.accuracy)
+        println(io, "solver settings: ", result.settings)
+        for d in result.diagnostics
+            println(io, "\nReceiver group ", d.profile)
+            for (name, value) in pairs(d)
+                println(io, name, " = ", value)
+            end
+        end
+        if result.equivalent_diagnostics !== nothing
+            println(io, "\nEquivalent source")
+            for (name, value) in pairs(result.equivalent_diagnostics)
+                println(io, name, " = ", value)
+            end
+        end
+        println(io, "\nConvergence flags concern numerical truncation criteria; they are not an error bound for the physical model.")
+    end
+    abspath(path)
 end
 
 """Read field time series; columns are time, then depth-major/radius-minor samples."""

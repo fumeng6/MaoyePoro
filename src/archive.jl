@@ -1,4 +1,4 @@
-# JLD2 结果文件保存 Float64 场量、输入参数、材料模型、计算网格、加载历史和数值诊断。
+# JLD2 保存 Float64 场量、输入参数、材料模型、计算网格、加载历史和简短计算状态。
 # 各场量分量分别存储，查询一个分量时只需读取对应数组及其坐标和单位。
 const RESULT_UNITS = ("m", "m", "1", "1", "1", "1", "rad", "Pa", "m/s", "m/s")
 const RESULT_AXIS_ORDER = ("time", "radius", "depth", "component")
@@ -13,6 +13,7 @@ result_record(value) = NamedTuple{fieldnames(typeof(value))}(
 All ten fields are saved regardless of the text-output selection. Each field
 has its own time × radius × depth dataset, allowing `read_field` to load it
 without loading the other fields. `compress=true` enables lossless compression.
+Detailed diagnostics are written separately by `write_outputs(...; diagnostics=true)`.
 """
 function save_result(path::AbstractString, result; compress::Bool=false)
     input, data = result.input, result.data
@@ -22,7 +23,7 @@ function save_result(path::AbstractString, result; compress::Bool=false)
     destination = abspath(path)
     mkpath(dirname(destination))
     JLD2.jldopen(destination, "w"; compress) do file
-        file["schema_version"] = 1
+        file["schema_version"] = 2
         file["package_version"] = string(pkgversion(@__MODULE__))
         file["julia_version"] = string(VERSION)
         file["axis_order"] = collect(RESULT_AXIS_ORDER)
@@ -38,9 +39,9 @@ function save_result(path::AbstractString, result; compress::Bool=false)
         file["input"] = result_record(input)
         file["model"] = result_record(result.model)
         file["grid"] = result_record(result.grid)
-        file["diagnostics"] = result.diagnostics
+        file["status"] = result.status
         file["equivalent"] = result.equivalent
-        file["equivalent_diagnostics"] = result.equivalent_diagnostics
+        file["equivalent_impulses"] = result.equivalent_impulses
         file["settings"] = hasproperty(result, :settings) ? result.settings : nothing
         for (ic, name) in enumerate(COMPONENTS)
             file["fields/$(name)"] = data[:, :, :, ic]
@@ -50,14 +51,18 @@ function save_result(path::AbstractString, result; compress::Bool=false)
 end
 
 function check_result_archive(file)
-    file["schema_version"] == 1 || error("Unsupported MaoyePoro result schema.")
+    file["schema_version"] == 2 || error("Unsupported MaoyePoro result schema.")
     file["components"] == string.(collect(COMPONENTS)) || error("Unexpected result component order.")
     file["axis_order"] == collect(RESULT_AXIS_ORDER) || error("Unexpected result axis order.")
     file["field_axis_order"] == collect(RESULT_AXIS_ORDER[1:3]) || error("Unexpected field axis order.")
     file["units"] == collect(RESULT_UNITS) || error("Unexpected result units.")
 end
 
-"""Load the complete input, actual model/grid, fields and diagnostics from JLD2."""
+"""Load physical results, input, model/grid and brief numerical status from JLD2.
+
+Detailed diagnostics are separate from the result archive. The returned
+`diagnostics` is empty and `equivalent_diagnostics` is nothing.
+"""
 function load_result(path::AbstractString)
     JLD2.jldopen(path, "r") do file
         check_result_archive(file)
@@ -76,8 +81,8 @@ function load_result(path::AbstractString)
                 error("Unexpected dimensions or precision for field $name.")
             copyto!(view(data, :, :, :, ic), values)
         end
-        (; input, model, grid, time, data, diagnostics=file["diagnostics"],
-            equivalent=file["equivalent"], equivalent_diagnostics=file["equivalent_diagnostics"],
+        (; input, model, grid, time, data, status=file["status"], diagnostics=NamedTuple[],
+            equivalent=file["equivalent"], equivalent_impulses=file["equivalent_impulses"], equivalent_diagnostics=nothing,
             settings=file["settings"])
     end
 end

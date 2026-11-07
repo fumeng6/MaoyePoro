@@ -55,6 +55,7 @@ Base.@kwdef struct PoroelasticInput
     filesn::Vector{String} = String[]
     compute_equivalent::Bool = false
     equivalent_filename::String = "equivalent_source.dat"
+    diagnostics::Bool = false
     # 顶部：0 全空间；1 排水自由面；2 封闭自由面。材料重复深度表示界面两侧。
     isurfcon::Int = 1
     model_nodes::Matrix{Float64}

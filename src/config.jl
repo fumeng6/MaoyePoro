@@ -90,7 +90,9 @@ function read_toml_input(path)
     medium = check_config_keys(config["medium"], ("surface", "nodes"), "medium")
     numerics = check_config_keys(get(config, "numerics", Dict()), ("accuracy",), "numerics")
     output = check_config_keys(get(config, "output", Dict()), ("fields", "snapshot_times_s",
-        "snapshot_files", "compute_equivalent", "field_files", "equivalent_filename"), "output")
+        "snapshot_files", "compute_equivalent", "field_files", "equivalent_filename", "diagnostics"), "output")
+    diagnostics = get(output, "diagnostics", false)
+    diagnostics isa Bool || throw(ArgumentError("output.diagnostics must be true or false."))
 
     istype = config_code(source["kind"], SOURCE_KINDS, "source.kind")
     ts0, sinj0 = source_history(source, path)
@@ -124,6 +126,7 @@ function read_toml_input(path)
         selected=selected, filenames=filenames, timesn=timesn, filesn=filesn,
         compute_equivalent=Bool(get(output, "compute_equivalent", false)),
         equivalent_filename=String(get(output, "equivalent_filename", "equivalent_source.dat")),
+        diagnostics=diagnostics,
         isurfcon=isurfcon, model_nodes=nodes)
     validate_input(input)
 end
@@ -150,7 +153,7 @@ function write_input(path::AbstractString, input::PoroelasticInput; history_file
         "output" => Dict("fields" => [string(COMPONENTS[i]) for i in 1:10 if c.selected[i]],
             "field_files" => Dict(string(COMPONENTS[i]) => c.filenames[i] for i in 1:10), "snapshot_times_s" => c.timesn,
             "snapshot_files" => c.filesn, "compute_equivalent" => c.compute_equivalent,
-            "equivalent_filename" => c.equivalent_filename))
+            "equivalent_filename" => c.equivalent_filename, "diagnostics" => c.diagnostics))
     if history_file !== nothing
         history_file isa AbstractString || throw(ArgumentError("history_file must be a file path."))
         destination = history_path(path, history_file)
@@ -182,8 +185,9 @@ function write_input(path::AbstractString, input::PoroelasticInput; history_file
         println(io, "# medium.surface：fullspace 无自由面；drained 表面孔压为零；sealed 表面法向 Darcy 通量为零。")
         println(io, "# medium.nodes 给出材料随深度的变化：深度 m、剪切模量 Pa、排水和不排水泊松比、Skempton B、水力扩散系数 m²/s。")
         println(io, "# 同一深度的相邻材料节点分别表示界面上下两侧；不同深度间的材料参数按梯度离散为均质子层。")
-        println(io, "# numerics.accuracy 控制波数和频率采样加密时允许的相对变化，实际数值收敛状态见结果 diagnostics。")
+        println(io, "# numerics.accuracy 控制波数和频率采样加密时允许的相对变化，简短收敛状态见结果 status。")
         println(io, "# output.fields 选择要导出的文本时序分量；JLD2 保存全部十个场量分量。快照时刻单位 s，须在输出窗口内。")
+        println(io, "# output.diagnostics=true 或命令行 --diagnostics 单独保存 diagnostics.txt，不改变计算精度。")
         TOML.print(io, config; sorted=true)
     end
     abspath(path)

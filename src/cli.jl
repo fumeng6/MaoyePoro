@@ -62,11 +62,13 @@ diffusivity_m2_s = "" # 必填：水力扩散系数 D，m²/s，须大于 0；�
 
 [numerics]
 # 可保留默认值：控制波数积分与拉普拉斯逆变换的数值收敛判据，须在 0 与 1 之间。
-# 不是每个场量、每个样点的相对误差上限；计算后查看结果 diagnostics。
+# 不是每个场量、每个样点的相对误差上限；计算后查看结果 status。
 accuracy = 0.05
 
 [output]
 # 默认保存全部十类场量的 result.jld2；命令行 --format text 或 both 可导出文本。
+# 开启后单独保存 diagnostics.txt 并显示详细进度；不改变计算和收敛检查。
+diagnostics = false
 # 可选：fields 只选择文本时序分量，不改变计算和 JLD2 保存的分量。
 # fields = ["uz", "pp"]
 # 可选：快照时刻，s，须在 0 到 window_s 内；空数组表示不保存快照。
@@ -90,6 +92,7 @@ function cli_main(args)
           --max-frequencies N   Frequency capacity, a power of two >= 512
           --image-factor X      Suppress time-period aliasing (default: 0.001)
           --serial              Disable frequency parallelism
+          --diagnostics         Save diagnostics.txt and show detailed progress
           --quiet               Suppress progress messages
           --check               Read and check input/model/grid without solving
           --version             Show program version
@@ -131,6 +134,8 @@ function cli_main(args)
             end
         elseif arg == "--serial"
             options[:parallel] = false
+        elseif arg == "--diagnostics"
+            options[:diagnostics] = true
         elseif arg == "--quiet"
             options[:verbose] = false
         elseif arg == "--check"
@@ -164,6 +169,9 @@ function cli_main(args)
         return
     end
     result = run_simulation(path; options...)
+    println("Numerical criteria: fields=", result.status.field_converged,
+        "; equivalent source=", something(result.status.equivalent_converged, "not requested"),
+        "; singular samples=", result.status.singular_samples)
     for path in result.paths
         println("Wrote ", path)
     end

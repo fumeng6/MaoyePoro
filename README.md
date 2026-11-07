@@ -60,7 +60,9 @@ myporo --template my_case.toml
 
 ## 读取结果
 
-默认保存完整 `result.jld2`，包含全部十场、坐标、单位、输入、实际模型和数值诊断。`--format text` 导出文本，`--format both` 同时保存两种格式。
+默认只保存 `result.jld2`，包含全部十场、坐标、单位、输入、实际模型、求解设置和简短计算状态。`--format text` 导出文本及简短的 `simulation_info.txt`，`--format both` 同时保存两种格式。
+
+需要检查详细数值误差时，使用 `myporo case.toml --diagnostics` 或在 TOML 的 `[output]` 中设置 `diagnostics = true`，单独生成 `diagnostics.txt` 并显示详细进度。默认终端只显示简短计算状态、保存路径和必要警告；`--quiet` 可关闭诊断模式下的进度输出。
 
 | 字段 | 物理量 | 单位 |
 | --- | --- | --- |
@@ -70,7 +72,7 @@ myporo --template my_case.toml
 | `pp` | 孔压变化 | Pa |
 | `dvz`、`dvr` | 垂向与径向 Darcy 通量 | m/s |
 
-计算完成后检查 JLD2 的 `diagnostics` 或文本输出的 `simulation_info.txt`。对关注的场量作采样加密比较，弱扩散信号同时检查绝对误差和时间周期延拓影响。诊断定义见[输入输出格式](docs/输入输出格式.md#数值诊断)。
+计算完成后查看 JLD2 读回结果的 `status` 或文本输出的 `simulation_info.txt`；未满足数值判据时，开启诊断查看 `diagnostics.txt`。开关只控制详细信息的保存与展示，收敛检查始终执行。对关注的场量作采样加密比较，弱扩散信号同时检查绝对误差和时间周期延拓影响。诊断定义见[输入输出格式](docs/输入输出格式.md#数值诊断)。
 
 ## Julia 接口
 

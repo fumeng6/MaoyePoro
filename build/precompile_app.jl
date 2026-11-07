@@ -33,7 +33,7 @@ mktempdir() do directory
     MP.cli_main([input_path,"--check","--max-frequencies","512","--image-factor","0.001"])
     output_dir = joinpath(directory,"output")
     MP.cli_main([input_path,"--output",output_dir,"--format","both",
-        "--max-frequencies","512","--quiet"])
+        "--max-frequencies","512","--diagnostics","--quiet"])
     archive = joinpath(output_dir,"result.jld2")
     result = load_result(archive)
     read_field(archive,:pp)

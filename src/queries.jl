@@ -177,7 +177,7 @@ function _query_fields(path::AbstractString, components)
         m = file["model"]
         model = LayerModel(m.h,m.la,m.mu,m.alf,m.qa,m.dm)
         isequal(file["radii_m"],input.r) && isequal(file["depths_m"],input.zr) || error("Saved query coordinates disagree with the input.")
-        context = (input=input,model=model,time=file["time"],diagnostics=file["diagnostics"])
+        context = (input=input,model=model,time=file["time"],diagnostics=NamedTuple[])
         context,map(c -> file["fields/$(c)"],components)
     end
 end
